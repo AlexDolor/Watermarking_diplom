@@ -1,0 +1,19 @@
+torch
+torchvision
+torchaudio
+# torchcodec
+diffusers
+transformers
+accelerate
+safetensors
+huggingface_hub
+imageio
+imageio-ffmpeg
+opencv-python
+tqdm
+pandas
+scipy
+numpy
+Pillow
+matplotlib
+decord
