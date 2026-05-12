@@ -219,3 +219,35 @@ class UCF101FramesDataset(Dataset):
             "video_path": video_path,           # str
             "index": idx,
         }
+    
+
+class VideoPathDataset(Dataset):
+    VIDEO_EXTS = {".avi", ".mp4", ".mov", ".mkv", ".webm"}
+
+    def __init__(self, data_dir: str, split: str = "train", max_videos=None):
+        self.data_dir = Path(data_dir)
+        self.split_dir = self.data_dir / split
+
+        self.class_names = sorted([p.name for p in self.split_dir.iterdir() if p.is_dir()])
+        self.class_to_idx = {name: i for i, name in enumerate(self.class_names)}
+
+        self.samples = []
+        for class_name in self.class_names:
+            class_dir = self.split_dir / class_name
+            for p in sorted(class_dir.rglob("*")):
+                if p.is_file() and p.suffix.lower() in self.VIDEO_EXTS:
+                    self.samples.append({
+                        "video_path": str(p),
+                        "class_name": class_name,
+                        "label": self.class_to_idx[class_name],
+                        "file_name": p.name,
+                    })
+
+        if max_videos is not None:
+            self.samples = self.samples[:max_videos]
+
+    def __len__(self):
+        return len(self.samples)
+
+    def __getitem__(self, idx):
+        return self.samples[idx]

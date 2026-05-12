@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 
 class DiffusersVAEWrapper(nn.Module):
-    def __init__(self, model_id="stabilityai/sd-vae-ft-mse", device="cuda"):
+    def __init__(self, model_id="stabilityai/sd-vae-ft-mse", device="cpu"):
         super().__init__()
         self.vae = AutoencoderKL.from_pretrained(model_id).to(device)
         self.vae.eval()

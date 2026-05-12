@@ -1,3 +1,7 @@
+__pycache__/
+*/__pycache__/
 data/
 .venv/
+outputs/videos
+outputs/compare
 lool.py

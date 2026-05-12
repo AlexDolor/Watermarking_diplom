@@ -3,30 +3,14 @@
 AE + Simplified VideoMark
 
 Pipeline overview:
-	E - Encoder
-	D - Decoder
-	x - input video
-	w - watermark
-
-	z = E(x)
 
 	Encoding:
-		Video encoding
-		Watermark embedding
-		Embedded video decoding
-
+		Every Nth frame is processed through a VAE Encoder
+		Then a watermark is embedded into the latent layer
+		Watermarked latent is then processed through a VAE Decoder
+	
 	Attack:
 		IN PROGRESS
 
 	Decoding:
-		Video decoding
-		Watermark extraction
-
-TODO
-	переделать датасет, чтобы он брал пути к видео а не сами видео.
-	Сами видео обрабатывать уже после вызова одного элемента из датасета.
-
-	Добавить чтение и запись видео полностью (лежит в пепёсити. читать opencv, писать ffmpeg)
-
-	ПРотестировать с реальным автоэнкодером.
-		
+		IN PROGRESS
