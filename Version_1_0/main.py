@@ -28,7 +28,8 @@ from torchvision import transforms
 from dataset import UCF101FramesDataset, VideoPathDataset
 from AE import DiffusersVAEWrapper
 from parser import print_opts, create_parser
-
+from PRC_TMM import prc_generate_sequence, prc_get_video_bits, decode_video_with_prc_tmm
+from misc import encode_frame, decode_frame, make_watermark_mask_like, make_progress_bar
 
 
 # =========================
@@ -37,31 +38,31 @@ from parser import print_opts, create_parser
 
 
 # TODO переделать в парсер
-@dataclass
-class Config:
-    root_dir: str = "./data/UCF101"
-    annotation_path: str = "./data/ucfTrainTestlist"
-    frames_per_clip: int = 16
-    step_between_clips: int = 16
-    frame_rate: Optional[int] = None
+# @dataclass
+# class Config:
+#     root_dir: str = "./data/UCF101"
+#     annotation_path: str = "./data/ucfTrainTestlist"
+#     frames_per_clip: int = 16
+#     step_between_clips: int = 16
+#     frame_rate: Optional[int] = None
 
-    image_size: int = 256
-    batch_size: int = 4
-    num_workers: int = 4
+#     image_size: int = 256
+#     batch_size: int = 4
+#     num_workers: int = 4
 
-    device: str = "cuda" if torch.cuda.is_available() else "cpu"
+#     device: str = "cuda" if torch.cuda.is_available() else "cpu"
 
-    watermark_seed: int = 1234
-    watermark_strength: float = 0.15
-    watermark_mode: str = "additive"   # "additive" or "sign_replace"
-    watermark_bit: int = 1
+#     watermark_seed: int = 1234
+#     watermark_strength: float = 0.15
+#     watermark_mode: str = "additive"   # "additive" or "sign_replace"
+#     watermark_bit: int = 1
 
-    max_videos: Optional[int] = None
-    output_dir: str = "./outputs"
+#     max_videos: Optional[int] = None
+#     output_dir: str = "./outputs"
 
 
-CFG = Config()
-os.makedirs(CFG.output_dir, exist_ok=True)
+# CFG = Config()
+# os.makedirs(CFG.output_dir, exist_ok=True)
 
 
 
@@ -137,26 +138,7 @@ def load_pretrained_vae(device: str):
 # 5. Watermark-маска
 # =========================
 
-def seeded_generator(seed: int, device: str):
-    g = torch.Generator(device=device)
-    g.manual_seed(seed)
-    return g
 
-
-def make_watermark_mask_like(z: torch.Tensor, seed: int, bit: int) -> torch.Tensor:
-    """
-    Возвращает маску {-1, +1} той же формы, что z.
-    bit=1 -> mask
-    bit=0 -> -mask
-    """
-    g = seeded_generator(seed, z.device)
-    mask = torch.randint(
-        low=0, high=2, size=z.shape, generator=g, device=z.device
-    ).float()
-    mask = mask * 2.0 - 1.0
-    if bit == 0:
-        mask = -mask
-    return mask
 
 
 # =========================
@@ -201,18 +183,7 @@ def embed_watermark(
 # 7. Декодирование watermark
 # =========================
 
-def correlation_score(z: torch.Tensor, seed: int, bit: int) -> torch.Tensor:
-    mask = make_watermark_mask_like(z, seed, bit)
-    z_sign = torch.sign(z)
-    score = (z_sign * mask).flatten(1).mean(dim=1)
-    return score
 
-
-def detect_watermark_bit(z: torch.Tensor, seed: int) -> torch.Tensor:
-    s1 = correlation_score(z, seed, bit=1)
-    s0 = correlation_score(z, seed, bit=0)
-    pred = (s1 > s0).long()
-    return pred
 
 
 # =========================
@@ -257,6 +228,7 @@ def make_video_tqdm(total_videos: int, text: str):
     )
 
 
+
 # untested
 def save_watermarked_video(frames_tensor: torch.Tensor, save_path: str, fps: int = 8):
     """
@@ -278,27 +250,8 @@ def save_side_by_side_comparison(original, watermarked, save_path):
     merged = cv2.hconcat([original, watermarked])
     cv2.imwrite(save_path, merged)
 
-def encode_frame(frame: np.ndarray, vae, device: str):
-    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    x = torch.from_numpy(frame_rgb).float()          # [H, W, C]
-    x = x / 255.0                                    # [0, 1]
-    x = x.permute(2, 0, 1).unsqueeze(0)              # [1, C, H, W]
-    x = x * 2.0 - 1.0                                # [-1, 1]
-    x = x.to(device, dtype=torch.float32)
-    return vae.encode(x)
 
-def decode_frame(latent: torch.Tensor, vae):
-    x = vae.decode(latent)
-    x = x.detach().cpu().clamp(-1, 1)
-    x = (x + 1.0) / 2.0                              # [0, 1]
-    x = (x * 255.0).byte()[0]                        # [C, H, W]
-    x = x.permute(1, 2, 0).numpy()                   # [H, W, C], RGB
-    x_bgr = cv2.cvtColor(x, cv2.COLOR_RGB2BGR)
-    return x_bgr
-
-
-
-def watermark_video(input_path, vid_name, vae, opts):
+def watermark_video(input_path, vid_name, prc_sequence, vae, opts):
     '''Full encoding cycle'''
     #Open video
     cap = cv2.VideoCapture(input_path)
@@ -310,15 +263,18 @@ def watermark_video(input_path, vid_name, vae, opts):
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     fps = cap.get(cv2.CAP_PROP_FPS)
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    
-    # if '\\' in input_path:
-    #     vid_name = input_path.split('\\')[-1]
-    # else:
-    #     vid_name = input_path.split('/')[-1]
 
     print(f"[INFO] Video: {width}x{height} @ {fps:.2f}fps, {total_frames} frames total ({total_frames/fps:.1f} seconds)")
     
-    frame_step = int(np.ceil(total_frames / (opts.watermark_frames + 1)))
+    output_path = opts.output_dir + '/' + vid_name
+    frame_step = total_frames // opts.watermark_frames
+    
+    video_bits, prc_start = prc_get_video_bits(
+		    prc_sequence=prc_sequence,
+		    video_name=vid_name,
+		    n_bits=total_frames,
+		    key=opts.watermark_seed,
+		)
     
     ffmpeg_cmd = [
             'ffmpeg', '-y',
@@ -327,7 +283,8 @@ def watermark_video(input_path, vid_name, vae, opts):
             '-i', '-',
             '-c:v', 'libx264', '-crf', '23', '-preset', 'medium',
             '-an',  # No audio for now
-            opts.output_dir + '/' + vid_name
+            output_path
+            # opts.output_dir + '/' + vid_name
     ]
     proc = subprocess.Popen(
         ffmpeg_cmd,
@@ -342,8 +299,11 @@ def watermark_video(input_path, vid_name, vae, opts):
     next_frame_to_process = 0
 
     psnr_watermarked = []
+    pbar = make_progress_bar(total_frames, 'frames', 'Watermarking video')
 
     while True:
+        iter_start = time.perf_counter()
+
         ret, frame = cap.read()
         if not ret:
             break
@@ -351,13 +311,13 @@ def watermark_video(input_path, vid_name, vae, opts):
         # print(f'original img shape {frame.shape}')
         # print(f'original dtype {frame.dtype}')
         # Check if this frame should be watermarked
-        if frame_idx >= int(next_frame_to_process):
+        if True:#frame_idx >= int(next_frame_to_process):
             # Embed watermark
             z = encode_frame(frame, vae, opts.device)
             z_wm, selector = embed_watermark(
                 z,
                 seed=opts.watermark_seed,
-                bit=opts.watermark_bit,
+                bit=int(video_bits[frame_idx]),
                 strength=opts.watermark_strength,
                 mode=opts.watermark_mode,
                 topk_ratio=0.10,
@@ -370,8 +330,8 @@ def watermark_video(input_path, vid_name, vae, opts):
 
             #metrics
             psnr_watermarked.append(np_psnr(watermarked, frame))
-            save_side_by_side_comparison( frame, watermarked, 
-                opts.frame_comparison_dir + '/' + vid_name + f'_{watermarked_count}.jpg')
+            # save_side_by_side_comparison( frame, watermarked, 
+            #     opts.frame_comparison_dir + '/' + vid_name + f'_{watermarked_count}.jpg')
         else:
             # Pass through without watermarking
             watermarked = frame
@@ -380,6 +340,9 @@ def watermark_video(input_path, vid_name, vae, opts):
         proc.stdin.write(watermarked.tobytes())
 
         frame_idx += 1
+        iter_time = time.perf_counter() - iter_start
+        pbar.set_postfix_str(f"iter={iter_time:.3f}s")
+        pbar.update(1)
         # if frame_idx % 10 == 0:
         #     progress = (frame_idx / total_frames) * 100
         #     print(f"[PROGRESS] Processed {frame_idx}/{total_frames} frames ({progress:.1f}%) - watermarked: {watermarked_count}", flush=True)
@@ -389,6 +352,88 @@ def watermark_video(input_path, vid_name, vae, opts):
     proc.wait()
 
     return np.mean(psnr_watermarked)
+
+def decode_video(
+    input_path: str,
+    vid_name: str,
+    vae,
+    opts,
+):
+    """
+    Декодирование watermark-бита из всего видео.
+
+    Использует уже существующие функции:
+    - correlation_score(z, seed, bit)
+    - detect_watermark_bit(z, seed)  # опционально, здесь не обязателен
+    - cv2_frame_to_vae_input(...)
+
+    Возвращает итоговое решение по ролику, а не по отдельным кадрам.
+    """
+
+    cap = cv2.VideoCapture(input_path)
+    if not cap.isOpened():
+        raise RuntimeError(f"Cannot open video: {input_path}")
+
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    if total_frames <= 0:
+        cap.release()
+        raise RuntimeError(f"Empty video: {input_path}")
+
+    frame_step = total_frames // opts.watermark_frames
+
+    score_bit1_all = []
+    score_bit0_all = []
+    frame_preds = []
+
+    frame_idx = 0
+    next_frame_to_process = 0
+    while True:
+        ok, frame = cap.read()
+        if not ok:
+            break
+        
+        if frame_idx < next_frame_to_process:
+            frame_idx += 1
+            continue
+
+        z = encode_frame(frame, vae, opts.device)
+
+        s1 = correlation_score(z, seed=opts.watermark_seed, bit=1)  # shape [B]
+        s0 = correlation_score(z, seed=opts.watermark_seed, bit=0)  # shape [B]
+
+        score_bit1_all.append(float(s1.item()))
+        score_bit0_all.append(float(s0.item()))
+        frame_preds.append(int((s1 > s0).long().item()))
+
+        next_frame_to_process += frame_step
+        frame_idx += 1
+
+    cap.release()
+
+    if len(score_bit1_all) == 0:
+        raise RuntimeError(f"No watermark frames processed for video: {input_path}")
+
+    mean_s1 = float(np.mean(score_bit1_all))
+    mean_s0 = float(np.mean(score_bit0_all))
+
+    # video-level решение
+    video_pred = int(mean_s1 > mean_s0)
+
+    # альтернативно: majority vote по frame_preds
+    majority_pred = int(np.mean(frame_preds) >= 0.5)
+
+    return {
+        "video_path": input_path,
+        "video_name": vid_name,
+        "used_frames": len(score_bit1_all),
+        "mean_score_bit1": mean_s1,
+        "mean_score_bit0": mean_s0,
+        "video_pred": video_pred,
+        "majority_pred": majority_pred,
+        "frame_preds": frame_preds,
+        "frame_score_bit1": score_bit1_all,
+        "frame_score_bit0": score_bit0_all,
+    }
 
 # =========================
 # 10. Основной цикл
@@ -466,6 +511,15 @@ def main(opts):
 
     vae = load_pretrained_vae(opts.device)
 
+    print('[INFO] datatset and VAE loaded successully')
+
+    prc_sequence = prc_generate_sequence(
+        length=opts.prc_length,
+        key=opts.watermark_seed,
+    )
+    print('[INFO] prc_sequence generated')
+    
+
     if opts.max_videos == 0:
         opts.max_videos = len(dataset)
     else:   
@@ -480,10 +534,20 @@ def main(opts):
         psnr_mean = watermark_video(
             input_path = sample['video_path'],
             vid_name = sample['file_name'],
+            prc_sequence=prc_sequence,
             vae=vae, 
             opts=opts
             )
         psnr_all.append(psnr_mean)
+        res = decode_video_with_prc_tmm(
+            input_path=opts.output_dir + '/' + sample['file_name'],
+            prc_sequence=prc_sequence,
+            vae=vae,
+            opts=opts
+            )
+
+        for item in res.items():
+            print(f'{item[0]}:{item[1]}')
 
         iter_time = time.perf_counter() - iter_start
         pbar.set_postfix_str(f"iter={iter_time:.3f}s | file={sample['file_name']}")
@@ -494,6 +558,7 @@ def main(opts):
     pd.DataFrame(psnr_all, columns=['PSNR']).to_csv(opts.metrics_dir + '/psnr.csv')
 
     print(f'[INFO] Watermarking done\nMean PSNR {np.mean(psnr_all)}')
+
 
 if __name__ == "__main__":
     parser = create_parser()

@@ -36,4 +36,7 @@ def create_parser():
     parser.add_argument('--output_dir', type=str, default='./outputs/videos')
     parser.add_argument('--frame_comparison_dir', type=str, default='./outputs/compare')
     parser.add_argument('--metrics_dir', type=str, default='./outputs/metrics')
+
+    parser.add_argument('--prc_length', type=int, default=10000)
+    # parser.add_argument('--watermark_seed', type=str, default='test_watermark')
     return parser
