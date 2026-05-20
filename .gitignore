@@ -4,4 +4,8 @@ data/
 .venv/
 outputs/videos
 outputs/compare
+outputs/*.avi
+outputs/testing_params/frame*.jpg
+outputs/testing_params/basic/frame*.jpg
+outputs/testing_params/corr=whitened/frame*.jpg
 lool.py

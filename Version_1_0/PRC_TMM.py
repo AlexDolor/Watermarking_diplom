@@ -17,17 +17,17 @@ def prc_generate_sequence(length: int, key: int) -> np.ndarray:
     return seq.astype(np.uint8)
 
 
-def prc_choose_start(video_name: str, key: int, max_start: int) -> int:
+def prc_choose_start(video_id: str, key: int, max_start: int) -> int:
     """
     Детерминированно выбирает стартовый индекс для конкретного видео.
     """
     if max_start <= 0:
         return 0
-    h = hashlib.sha256(f"start|{video_name}|{key}".encode("utf-8")).hexdigest()
+    h = hashlib.sha256(f"start|{video_id}|{key}".encode("utf-8")).hexdigest()
     return int(h, 16) % max_start
 
 
-def prc_get_video_bits(prc_sequence: np.ndarray, video_name: str, n_bits: int, key: int) -> tuple[np.ndarray, int]:
+def prc_get_video_bits(prc_sequence: np.ndarray, video_id: str, n_bits: int, key: int) -> tuple[np.ndarray, int]:
     """
     Возвращает фрагмент PRC-последовательности длины n_bits для данного видео.
     """
@@ -35,7 +35,7 @@ def prc_get_video_bits(prc_sequence: np.ndarray, video_name: str, n_bits: int, k
         raise ValueError("PRC sequence is shorter than requested n_bits")
 
     max_start = len(prc_sequence) - n_bits + 1
-    start = prc_choose_start(video_name, key, max_start)
+    start = prc_choose_start(video_id, key, max_start)
     bits = prc_sequence[start:start + n_bits].copy()
     return bits, start
 
@@ -132,7 +132,7 @@ def random_match_pvalue(
 
 def decode_prc_sequence_from_video(
     input_path: str,
-    vid_name: str,
+    # vid_name: str,
     vae,
     opts,
 ):
@@ -199,14 +199,14 @@ def decode_prc_sequence_from_video(
 
     return {
         "video_path": input_path,
-        "video_name": vid_name,
+        # "video_name": vid_name,
         "bits": np.array(extracted_bits, dtype=np.uint8),
         "scores": score_pairs,
     }
 
 def decode_video_with_prc_tmm(
     input_path: str,
-    # vid_name: str,
+    vid_id: str,
     prc_sequence,
     vae,
     opts,
@@ -219,16 +219,16 @@ def decode_video_with_prc_tmm(
 
     dec = decode_prc_sequence_from_video(
         input_path=input_path,
-        vid_name=vid_name,
+        # vid_name=vid_name,
         vae=vae,
         opts=opts,
     )
     print('[INFO] Decoding prc sequence from video DONE')
-    observed_bits = dec["bits"]
+    observed_bits = (dec["bits"]).squeeze(1)
 
     target_bits, start = prc_get_video_bits(
         prc_sequence=prc_sequence,
-        video_name=vid_name,
+        video_id=vid_id,
         n_bits=len(observed_bits),
         key=opts.watermark_seed,
     )

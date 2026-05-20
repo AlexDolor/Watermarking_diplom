@@ -29,7 +29,8 @@ from dataset import UCF101FramesDataset, VideoPathDataset
 from AE import DiffusersVAEWrapper
 from parser import print_opts, create_parser
 from PRC_TMM import prc_generate_sequence, prc_get_video_bits, decode_video_with_prc_tmm
-from misc import encode_frame, decode_frame, make_watermark_mask_like, make_progress_bar
+from misc import encode_frame, decode_frame, make_watermark_mask_like, make_progress_bar, make_unique_video_tag_strong, save_string_to_binary
+from attack import attack
 
 
 # =========================
@@ -244,14 +245,10 @@ def save_watermarked_video(frames_tensor: torch.Tensor, save_path: str, fps: int
         for frame in frames:
             writer.append_data(frame)
 
-def save_side_by_side_comparison(original, watermarked, save_path):
-    # img1 = np.ascontiguousarray(original_bgr.astype(np.uint8))
-    # img2 = np.ascontiguousarray(watermarked_bgr.astype(np.uint8))
-    merged = cv2.hconcat([original, watermarked])
-    cv2.imwrite(save_path, merged)
 
 
-def watermark_video(input_path, vid_name, prc_sequence, vae, opts):
+
+def watermark_video(input_path, vid_name, vid_uuid, prc_sequence, vae, opts):
     '''Full encoding cycle'''
     #Open video
     cap = cv2.VideoCapture(input_path)
@@ -271,7 +268,7 @@ def watermark_video(input_path, vid_name, prc_sequence, vae, opts):
     
     video_bits, prc_start = prc_get_video_bits(
 		    prc_sequence=prc_sequence,
-		    video_name=vid_name,
+		    video_id=vid_uuid,
 		    n_bits=total_frames,
 		    key=opts.watermark_seed,
 		)
@@ -320,7 +317,7 @@ def watermark_video(input_path, vid_name, prc_sequence, vae, opts):
                 bit=int(video_bits[frame_idx]),
                 strength=opts.watermark_strength,
                 mode=opts.watermark_mode,
-                topk_ratio=0.10,
+                topk_ratio=opts.topk_ratio
             )
             watermarked = decode_frame(z_wm, vae)
             # print(f'decoded img shape: {watermarked.shape}')
@@ -351,7 +348,7 @@ def watermark_video(input_path, vid_name, prc_sequence, vae, opts):
     proc.stdin.close()
     proc.wait()
 
-    return np.mean(psnr_watermarked)
+    return [np.mean(psnr_watermarked), video_bits]
 
 def decode_video(
     input_path: str,
@@ -530,17 +527,21 @@ def main(opts):
 
     for sample in dataset:
         iter_start = time.perf_counter()
-
-        psnr_mean = watermark_video(
+        vid_uuid = make_unique_video_tag_strong('video_path')
+        save_string_to_binary(vid_uuid, opts.output_dir + f'/uuid/{sample["file_name"]}')
+        res = watermark_video(
             input_path = sample['video_path'],
             vid_name = sample['file_name'],
+            vid_uuid=vid_uuid,
             prc_sequence=prc_sequence,
             vae=vae, 
             opts=opts
             )
-        psnr_all.append(psnr_mean)
+        psnr_all.append(res[0])
+        print(f'encoded video bits: {res[1]}')
         res = decode_video_with_prc_tmm(
             input_path=opts.output_dir + '/' + sample['file_name'],
+            vid_id=vid_uuid,
             prc_sequence=prc_sequence,
             vae=vae,
             opts=opts
@@ -548,6 +549,21 @@ def main(opts):
 
         for item in res.items():
             print(f'{item[0]}:{item[1]}')
+
+        paths = attack(opts.output_dir + '/' + sample['file_name'],
+                       opts.output_dir, opts.device)
+        
+        for p in paths.items():
+            res = decode_video_with_prc_tmm(
+                input_path=p[1],
+                vid_id=vid_uuid,
+                prc_sequence=prc_sequence,
+                vae=vae,
+                opts=opts
+                )
+            print('\n','='*80, '\n')
+            for item in res.items():
+                print(f'{item[0]}:{item[1]}')
 
         iter_time = time.perf_counter() - iter_start
         pbar.set_postfix_str(f"iter={iter_time:.3f}s | file={sample['file_name']}")
@@ -557,7 +573,7 @@ def main(opts):
     #save metrics
     pd.DataFrame(psnr_all, columns=['PSNR']).to_csv(opts.metrics_dir + '/psnr.csv')
 
-    print(f'[INFO] Watermarking done\nMean PSNR {np.mean(psnr_all)}')
+    print(f'[INFO] Watermark encoding and decoding done\nMean PSNR {np.mean(psnr_all)}')
 
 
 if __name__ == "__main__":

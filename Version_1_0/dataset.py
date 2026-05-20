@@ -218,8 +218,7 @@ class UCF101FramesDataset(Dataset):
             "class_name": sample["class_name"], # str
             "video_path": video_path,           # str
             "index": idx,
-        }
-    
+        }   
 
 class VideoPathDataset(Dataset):
     VIDEO_EXTS = {".avi", ".mp4", ".mov", ".mkv", ".webm"}
