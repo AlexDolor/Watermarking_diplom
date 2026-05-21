@@ -1,6 +1,11 @@
 __pycache__/
 */__pycache__/
-data/
+
+data/*
+!data/models/
+data/models/*
+!data/models/*.py
+
 .venv/
 outputs/videos
 outputs/compare
