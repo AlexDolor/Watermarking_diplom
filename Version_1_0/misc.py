@@ -88,13 +88,9 @@ def make_progress_bar(total_items: int, item_units: str, text_desc: str):
         bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}] {postfix}",
     )
 
-
 def save_side_by_side_comparison(original, watermarked, save_path):
-    # img1 = np.ascontiguousarray(original_bgr.astype(np.uint8))
-    # img2 = np.ascontiguousarray(watermarked_bgr.astype(np.uint8))
     merged = cv2.hconcat([original, watermarked])
     cv2.imwrite(save_path, merged)
-
 
 def make_unique_video_tag_strong(video_filename: str) -> str:
     stem = Path(video_filename).stem
@@ -102,14 +98,12 @@ def make_unique_video_tag_strong(video_filename: str) -> str:
     short_uid = uuid.uuid4().hex[:8]
     return f"{stem}_{now_str}_{short_uid}"
 
-
 def save_string_to_binary(value: str, out_path: str) -> None:
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     with open(out_path, "wb") as f:
         f.write(value.encode("utf-8"))
-
 
 def load_string_from_binary(in_path: str) -> str:
     with open(in_path, "rb") as f:

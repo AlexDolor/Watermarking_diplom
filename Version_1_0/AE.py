@@ -1,6 +1,4 @@
-# from diffusers import AutoencoderKL
 from diffusers.models.autoencoders.autoencoder_kl import AutoencoderKL
-from nd_vq_vae import NDimVQVAE
 import torch
 import torch.nn as nn
 
@@ -59,31 +57,3 @@ class DummyVAE(nn.Module):
     def decode(self, z: torch.Tensor) -> torch.Tensor:
         return self.decoder(z)
     
-# class WrappedNDimVQVAE(torch.nn.Module):
-#     def __init__(self, 
-#                 embedding_dim=64,
-#                 n_codes=64,
-#                 n_dims=3,           # 3D: time, height, width
-#                 downsample=(2, 2, 2),
-#                 n_hiddens=64,
-#                 n_res_layers=2,
-#                 codebook_beta=0.25,
-#                 input_shape=input_shape,):
-#         super().__init__()
-#         self.vqvae = NDimVQVAE(
-#                 embedding_dim=64,
-#                 n_codes=64,
-#                 n_dims=3,           # 3D: time, height, width
-#                 downsample=(2, 2, 2),
-#                 n_hiddens=64,
-#                 n_res_layers=2,
-#                 codebook_beta=0.10,
-#                 input_shape=input_shape
-#                 )
-
-#     def encode(self, x):
-#         _, _, vq_out = self.vqvae(x)
-#         return vq_out["z"]
-
-#     def decode(self, z):
-#         return self.vqvae.decoder(z)

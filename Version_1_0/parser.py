@@ -29,8 +29,9 @@ def create_parser():
     parser.add_argument('--watermark_strength', type=float, default=0.25)
     parser.add_argument('--watermark_mode', type=str, default='additive', choices=['additive', 'sign_replace'])
     parser.add_argument('--topk_ratio', type=float, default=0.1)
-    parser.add_argument('--watermark_frames', type=int, default=10)
-    parser.add_argument('--watermark_bit', type=int, default=1)
+    parser.add_argument('--tmm_random_trials', type=float, default=1000)
+    # parser.add_argument('--watermark_frames', type=int, default=10)
+    # parser.add_argument('--watermark_bit', type=int, default=1)
 
     parser.add_argument('--data_split', type=str, default='train', choices=['train','test','val'])
 

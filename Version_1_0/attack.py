@@ -14,14 +14,6 @@ import imageio.v2 as imageio
 # Helpers
 # ============================================================
 
-# def _check_video(video: torch.Tensor) -> torch.Tensor:
-#     pass
-
-# def _unbatch_video(video: torch.Tensor) -> torch.Tensor:
-#     if video.ndim == 5:
-#         return video.squeeze(0)
-#     return video
-
 def _to_bcthw(video: torch.Tensor) -> torch.Tensor:
     if not isinstance(video, torch.Tensor):
         raise TypeError("video must be a torch.Tensor")

@@ -3,15 +3,11 @@ from typing import Optional, List, Dict
 
 import torch
 from torch.utils.data import Dataset
-# from torchvision.io import read_video DEPRECATED
 from decord import VideoReader, cpu
 
 from torchcodec.decoders import VideoDecoder
 from torchvision import transforms
 
-# =========================
-# 2. Нормализация под VAE
-# =========================
 
 class FramePreprocess:
     """
@@ -89,13 +85,6 @@ class UCF101FramesDataset(Dataset):
         self.class_to_idx = {name: i for i, name in enumerate(self.class_names)}
         self.samples: List[Dict] = []
 
-        # if self.use_csv:
-        #     csv_path = self.data_dir / f"{split}.csv"
-        #     if not csv_path.exists():
-        #         raise FileNotFoundError(f"CSV file not found: {csv_path}")
-        #     self.samples = self._build_samples_from_csv(csv_path)
-        # else:
-        #     self.samples = self._build_samples_from_folders()
         self.samples = self._build_samples_from_folders()
 
         if max_videos is not None:
@@ -122,75 +111,6 @@ class UCF101FramesDataset(Dataset):
                     )
         return samples
 
-    # def _build_samples_from_csv(self, csv_path: Path) -> List[Dict]:
-    #     import pandas as pd
-
-    #     df = pd.read_csv(csv_path)
-    #     cols = [c.lower() for c in df.columns]
-
-    #     possible_path_cols = ["filepath", "file_path", "path", "video", "video_path", "filename", "file"]
-    #     possible_label_cols = ["label", "class", "class_name", "category"]
-
-    #     path_col = None
-    #     label_col = None
-
-    #     for c in df.columns:
-    #         if c.lower() in possible_path_cols:
-    #             path_col = c
-    #             break
-
-    #     for c in df.columns:
-    #         if c.lower() in possible_label_cols:
-    #             label_col = c
-    #             break
-
-    #     if path_col is None:
-    #         raise ValueError(
-    #             f"Could not infer path column in {csv_path}. "
-    #             f"Expected one of: {possible_path_cols}"
-    #         )
-
-    #     samples = []
-    #     for _, row in df.iterrows():
-    #         raw_path = str(row[path_col])
-
-    #         video_path = Path(raw_path)
-    #         if not video_path.is_absolute():
-    #             candidate1 = self.data_dir / raw_path
-    #             candidate2 = self.split_dir / raw_path
-
-    #             if candidate1.exists():
-    #                 video_path = candidate1
-    #             elif candidate2.exists():
-    #                 video_path = candidate2
-    #             else:
-    #                 video_path = candidate2
-
-    #         if not video_path.exists():
-    #             continue
-
-    #         if label_col is not None:
-    #             class_name = str(row[label_col])
-    #         else:
-    #             class_name = video_path.parent.name
-
-    #         if class_name not in self.class_to_idx:
-    #             # если в CSV метка отличается, но папка корректная — доверяем папке
-    #             class_name = video_path.parent.name
-
-    #         if class_name not in self.class_to_idx:
-    #             continue
-
-    #         samples.append(
-    #             {
-    #                 "video_path": str(video_path),
-    #                 "class_name": class_name,
-    #                 "label": self.class_to_idx[class_name],
-    #             }
-    #         )
-
-    #     return samples
-
     def __len__(self):
         return len(self.samples)
 
@@ -200,9 +120,6 @@ class UCF101FramesDataset(Dataset):
 
         vr = VideoReader(video_path, ctx=cpu(0))
         video = torch.from_numpy(vr[:].asnumpy())
-        # video, _, info = read_video(video_path, pts_unit="sec")
-        # video = VideoDecoder(video_path)
-        # video: [T, H, W, C], uint8
 
         if video.shape[0] == 0:
             raise RuntimeError(f"Empty or unreadable video: {video_path}")

@@ -39,13 +39,6 @@ def prc_get_video_bits(prc_sequence: np.ndarray, video_id: str, n_bits: int, key
     bits = prc_sequence[start:start + n_bits].copy()
     return bits, start
 
-# def prc_bit_for_frame(prc_sequence: np.ndarray, video_name: str, wm_local_idx: int, key: int) -> int:
-#     """
-#     wm_local_idx = локальный номер watermark-кадра внутри видео: 0,1,2,...
-#     """
-#     start = prc_choose_start(video_name, key, len(prc_sequence) - wm_local_idx)
-#     return int(prc_sequence[start + wm_local_idx])
-
 def edit_distance_bits(a: np.ndarray, b: np.ndarray):
     """
     Возвращает:
@@ -100,39 +93,8 @@ def random_match_pvalue(
         "p_value": p_value,
     }
 
-# def tmm_find_best_match(prc_sequence: np.ndarray, observed_bits: np.ndarray, search_stride: int = 1):
-#     """
-#     Ищет лучшее место в длинной PRC-последовательности, куда можно выровнять observed_bits.
-
-#     Возвращает:
-#     - best_start
-#     - best_dist
-#     - best_ref_window
-#     """
-#     L = len(observed_bits)
-#     if L == 0:
-#         raise ValueError("observed_bits is empty")
-#     if len(prc_sequence) < L:
-#         raise ValueError("prc_sequence shorter than observed_bits")
-
-#     best_start = None
-#     best_dist = None
-#     best_ref_window = None
-
-#     for start in range(0, len(prc_sequence) - L + 1, search_stride):
-#         ref_window = prc_sequence[start:start + L]
-#         dist, _ = edit_distance_alignment(ref_window, observed_bits)
-
-#         if best_dist is None or dist < best_dist:
-#             best_dist = dist
-#             best_start = start
-#             best_ref_window = ref_window.copy()
-
-#     return best_start, best_dist, best_ref_window
-
 def decode_prc_sequence_from_video(
     input_path: str,
-    # vid_name: str,
     vae,
     opts,
 ):
@@ -148,15 +110,6 @@ def decode_prc_sequence_from_video(
         cap.release()
         raise RuntimeError(f"Empty video: {input_path}")
 
-    # wm_frame_indices = set(
-    #     np.linspace(
-    #         0,
-    #         max(frame_count - 1, 0),
-    #         num=min(opts.wm_frames_per_video, frame_count),
-    #         dtype=int,
-    #     ).tolist()
-    # )
-
     extracted_bits = []
     score_pairs = []
 
@@ -169,21 +122,7 @@ def decode_prc_sequence_from_video(
         if not ok:
             break
 
-        # if frame_idx not in wm_frame_indices:
-        #     frame_idx += 1
-        #     continue
-
         z = encode_frame(frame, vae, opts.device)
-        # x = cv2_frame_to_vae_input(
-        #     frame_bgr,
-        #     device=opts.device,
-        #     size=(opts.image_size, opts.image_size),
-        # )
-
-        # with torch.no_grad():
-        #     posterior = vae.encode(x).latent_dist
-        #     z = posterior.sample()
-        #     z = z * vae.config.scaling_factor
 
         bit, score_pair = detect_watermark_bit(z, seed=opts.watermark_seed)
     
@@ -199,7 +138,6 @@ def decode_prc_sequence_from_video(
 
     return {
         "video_path": input_path,
-        # "video_name": vid_name,
         "bits": np.array(extracted_bits, dtype=np.uint8),
         "scores": score_pairs,
     }
@@ -219,7 +157,6 @@ def decode_video_with_prc_tmm(
 
     dec = decode_prc_sequence_from_video(
         input_path=input_path,
-        # vid_name=vid_name,
         vae=vae,
         opts=opts,
     )
@@ -237,7 +174,7 @@ def decode_video_with_prc_tmm(
     stats = random_match_pvalue(
         target_bits=target_bits,
         observed_bits=observed_bits,
-        n_trials=getattr(opts, "tmm_random_trials", 1000), #TODO
+        n_trials=opts.tmm_random_trials,
         seed=opts.watermark_seed,
     )
     print('[INFO] Random Match DONE')
