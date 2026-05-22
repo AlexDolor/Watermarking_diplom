@@ -426,6 +426,14 @@ def attack_h264_compression(
 
 def attack(input_path: str, output_path: str, device
     ) -> dict[str,str]:
+    '''attack video from input path\n
+    Implemented attacks:
+    - resizing
+    - frame dropping
+    - H264 compression
+    - gauss noise
+    \n
+    returns dict{Attack name : Attacked video path}'''
     video, fps = read_video_decord(input_path, device=device)
 
     resize_vid = attack_resize_roundtrip(video, 0.8)

@@ -70,7 +70,7 @@ def detect_watermark_bit(z: torch.Tensor, seed: int):
     # s0 = correlation_score(z, seed, bit=0)
     s1 = correlation_score_whitened(z, seed, bit=1)
     s0 = correlation_score_whitened(z, seed, bit=0)
-    pred = (s1 > s0).long()
+    pred = (s1 > s0).long().cpu()
     return pred, (s1, s0)
 
 def make_progress_bar(total_items: int, item_units: str, text_desc: str):

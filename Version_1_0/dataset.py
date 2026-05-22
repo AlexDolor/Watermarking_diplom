@@ -5,7 +5,7 @@ import torch
 from torch.utils.data import Dataset
 from decord import VideoReader, cpu
 
-from torchcodec.decoders import VideoDecoder
+# from torchcodec.decoders import VideoDecoder
 from torchvision import transforms
 
 

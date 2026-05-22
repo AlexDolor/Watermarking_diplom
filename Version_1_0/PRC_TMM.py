@@ -67,6 +67,7 @@ def edit_distance_bits(a: np.ndarray, b: np.ndarray):
 
     return int(dp[n, m])
 
+
 def random_match_pvalue(
     target_bits: np.ndarray,
     observed_bits: np.ndarray,
@@ -76,18 +77,25 @@ def random_match_pvalue(
     rng = np.random.default_rng(seed)
 
     true_dist = edit_distance_bits(target_bits, observed_bits)
+    denom = max(len(target_bits), len(observed_bits), 1)
+    norm_edit_dist = float(true_dist / denom)
+
 
     random_dists = []
     for _ in range(n_trials):
-        rand_bits = rng.integers(0, 2, size=len(target_bits), dtype=np.uint8)
-        d = edit_distance_bits(rand_bits, observed_bits)
+        rand_bits = rng.integers(0, 2, size=len(observed_bits), dtype=np.uint8)
+        d = edit_distance_bits(rand_bits, target_bits)
         random_dists.append(d)
 
     random_dists = np.array(random_dists, dtype=np.int32)
     p_value = float(np.mean(random_dists <= true_dist))
 
+
+
+
     return {
         "true_dist": int(true_dist),
+        'normalized_edit_distance': norm_edit_dist,
         "random_mean_dist": float(random_dists.mean()),
         "random_std_dist": float(random_dists.std()),
         "p_value": p_value,
@@ -185,7 +193,8 @@ def decode_video_with_prc_tmm(
         "prc_start": int(start),
         "target_bits": target_bits,
         "observed_bits": observed_bits,
-        "true_dist": stats["true_dist"],
+        "edit_distance": stats["true_dist"],
+        'normalized_edit_distance': stats['normalized_edit_distance'],
         "random_mean_dist": stats["random_mean_dist"],
         "random_std_dist": stats["random_std_dist"],
         "p_value": stats["p_value"],

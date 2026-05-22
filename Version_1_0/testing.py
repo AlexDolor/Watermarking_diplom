@@ -485,6 +485,37 @@ def test_prc_seq():
     print(video_bits.shape)
     print(video_bits)
     # print(video)
+
+def test_loader():
+    from dataset import VideoPathDataset
+    from torch.utils.data import DataLoader, RandomSampler
+
+    dataset = VideoPathDataset(
+        data_dir='data/UCF101',
+        split='train',
+        )
+    generator = torch.Generator()
+    generator.manual_seed(420)
+
+    sampler = RandomSampler(
+        dataset,
+        replacement=False,
+        num_samples=10,
+        generator=generator,
+    )
+    loader = DataLoader(
+        dataset,
+        batch_size=1,
+        sampler=sampler
+    )
+    for item in loader:
+        print(item)
+        print(item['video_path'])
+        print(item['video_path'][0])
+        break
+        # print(item.shape)
+
+
 # test_encode()
 # test_cv()
 # test_VideoPath()
@@ -505,4 +536,5 @@ def test_prc_seq():
 # test_read_write()
 # test_attack()
 # test_save_str()
-test_prc_seq()
+# test_prc_seq()
+test_loader()

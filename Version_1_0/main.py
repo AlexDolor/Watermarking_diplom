@@ -14,7 +14,7 @@ from tqdm import tqdm
 import torch
 import torch.nn.functional as F
 from torch import nn
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, RandomSampler
 from torchvision.datasets import UCF101
 from torchvision import transforms
 
@@ -24,6 +24,7 @@ from parser import print_opts, create_parser
 from PRC_TMM import prc_generate_sequence, prc_get_video_bits, decode_video_with_prc_tmm
 from misc import encode_frame, decode_frame, make_watermark_mask_like, make_progress_bar, make_unique_video_tag_strong, save_string_to_binary
 from attack import attack
+from metrics import summarize_video_quality_metrics, evaluate_frame_pair_metrics, IncrementalCSVSink
 
 
 def load_pretrained_vae(device: str):
@@ -72,18 +73,9 @@ def embed_watermark(
 
     return z_wm, selector
 
-def psnr(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-    mse = F.mse_loss(x, y, reduction="none").flatten(1).mean(dim=1)
-    return 10.0 * torch.log10(4.0 / (mse + 1e-8))  # т.к. диапазон [-1,1] => max^2 = 4
 
-def np_psnr(x: np.ndarray, y: np.ndarray):
-    mse = np.mean((x - y) ** 2)
-    if mse < 1e-12:
-        return float("inf")
 
-    return 10.0 * np.log10(255**2 / mse)
-
-def watermark_video(input_path, vid_name, vid_uuid, prc_sequence, vae, opts)-> List:
+def watermark_video(input_path, vid_name, vid_uuid, prc_sequence, vae, opts)-> Tuple:
     '''Full encoding cycle'''
     #Open video
     cap = cv2.VideoCapture(input_path)
@@ -128,6 +120,7 @@ def watermark_video(input_path, vid_name, vid_uuid, prc_sequence, vae, opts)-> L
     frame_idx = 0
 
     psnr_watermarked = []
+    frame_metrics = []
     pbar = make_progress_bar(total_frames, 'frames', 'Watermarking video')
 
     while True:
@@ -155,13 +148,14 @@ def watermark_video(input_path, vid_name, vid_uuid, prc_sequence, vae, opts)-> L
         # print(f'decoded dtype {watermarked.dtype}')
 
         #metrics
-        psnr_watermarked.append(np_psnr(watermarked, frame))
+        # psnr_watermarked.append(np_psnr(watermarked, frame))
+        frame_metrics.append(evaluate_frame_pair_metrics(frame, watermarked))
         # save_side_by_side_comparison( frame, watermarked, 
         #     opts.frame_comparison_dir + '/' + vid_name + f'_{watermarked_count}.jpg')
 
         # Write to FFmpeg
         proc.stdin.write(watermarked.tobytes())
-
+    
         frame_idx += 1
         iter_time = time.perf_counter() - iter_start
         pbar.set_postfix_str(f"iter={iter_time:.3f}s")
@@ -174,18 +168,40 @@ def watermark_video(input_path, vid_name, vid_uuid, prc_sequence, vae, opts)-> L
     proc.stdin.close()
     proc.wait()
 
-    return [np.mean(psnr_watermarked), video_bits]
+    metrics = summarize_video_quality_metrics(frame_metrics)
+    return metrics, video_bits
 
 # =========================
 # 
 # =========================
 
 def main(opts):
+    
     dataset = VideoPathDataset(
         data_dir=opts.data_dir,
         split=opts.data_split,
-        max_videos=opts.max_videos
+        # max_videos=opts.max_videos
         )
+    
+    if opts.max_videos == 0:
+        opts.max_videos = len(dataset)
+    else:   
+        opts.max_videos = min(len(dataset), opts.max_videos)
+
+    generator = torch.Generator()
+    generator.manual_seed(420)
+    sampler = RandomSampler(
+        dataset,
+        replacement=False,
+        num_samples=opts.max_videos,
+        generator=generator,
+    )
+    loader = DataLoader(
+        dataset,
+        batch_size=1,
+        sampler=sampler
+    )
+
 
     vae = load_pretrained_vae(opts.device)
 
@@ -198,64 +214,99 @@ def main(opts):
     print('[INFO] prc_sequence generated')
     
 
-    if opts.max_videos == 0:
-        opts.max_videos = len(dataset)
-    else:   
-        opts.max_videos = min(len(dataset), opts.max_videos)
+    
     
     pbar = make_progress_bar(opts.max_videos, 'videos', 'Watermarking videos')
 
-    psnr_all = []
-
-    for sample in dataset:
-        iter_start = time.perf_counter()
-        vid_uuid = make_unique_video_tag_strong('video_path')
-        save_string_to_binary(vid_uuid, opts.output_dir + f'/uuid/{sample["file_name"]}')
-        res = watermark_video(
-            input_path = sample['video_path'],
-            vid_name = sample['file_name'],
-            vid_uuid=vid_uuid,
-            prc_sequence=prc_sequence,
-            vae=vae, 
-            opts=opts
-            )
-        psnr_all.append(res[0])
-        print(f'encoded video bits: {res[1]}')
-        res = decode_video_with_prc_tmm(
-            input_path=opts.output_dir + '/' + sample['file_name'],
-            vid_id=vid_uuid,
-            prc_sequence=prc_sequence,
-            vae=vae,
-            opts=opts
-            )
-
-        for item in res.items():
-            print(f'{item[0]}:{item[1]}')
-
-        paths = attack(opts.output_dir + '/' + sample['file_name'],
-                       opts.output_dir, opts.device)
-        
-        for p in paths.items():
+    # psnr_all = []
+    fieldnames = [
+        "video_id",
+        'video_uuid',
+        "attack_name",
+        "psnr_mean",
+        "ssim_mean",
+        "edit_distance",
+        "normalized_edit_distance",
+        'p_value'
+    ]
+    with IncrementalCSVSink(opts.metrics_dir+"/metrics.csv", fieldnames) as sink:
+        for sample in loader:
+            iter_start = time.perf_counter()
+            vid_uuid = make_unique_video_tag_strong('video_path')
+            save_string_to_binary(vid_uuid, opts.output_dir + f'/uuid/{sample["file_name"][0]}')
+            
+            metrics, video_bits = watermark_video(
+                input_path = sample['video_path'][0],
+                vid_name = sample['file_name'][0],
+                vid_uuid=vid_uuid,
+                prc_sequence=prc_sequence,
+                vae=vae, 
+                opts=opts
+                )
+            # psnr_all.append(res[0])
+            print(f'encoded video bits: {video_bits}')
             res = decode_video_with_prc_tmm(
-                input_path=p[1],
+                input_path=opts.output_dir + '/' + sample['file_name'][0],
                 vid_id=vid_uuid,
                 prc_sequence=prc_sequence,
                 vae=vae,
                 opts=opts
                 )
-            print('\n','='*80, '\n')
+            row = {
+                "video_id": sample['file_name'][0],
+                'video_uuid': vid_uuid,
+                "attack_name": 'watermarking',
+                "psnr_mean": metrics["psnr_mean"],
+                "ssim_mean": metrics["ssim_mean"],
+                "edit_distance": res["edit_distance"],
+                "normalized_edit_distance": res["normalized_edit_distance"],
+                'p_value': res['p_value']
+            }
+
+            sink.write_row(row)
+
+
             for item in res.items():
                 print(f'{item[0]}:{item[1]}')
 
-        iter_time = time.perf_counter() - iter_start
-        pbar.set_postfix_str(f"iter={iter_time:.3f}s | file={sample['file_name']}")
-        pbar.update(1)
+            paths = attack(opts.output_dir + '/' + sample['file_name'][0],
+                        opts.output_dir, opts.device)
+            
+            for p in paths.items():
+                res = decode_video_with_prc_tmm(
+                    input_path=p[1],
+                    vid_id=vid_uuid,
+                    prc_sequence=prc_sequence,
+                    vae=vae,
+                    opts=opts
+                    )
+                row = {
+                    "video_id": sample['file_name'][0],
+                    'video_uuid': vid_uuid,
+                    "attack_name": p[0],
+                    "psnr_mean": None,
+                    "ssim_mean": None,
+                    "edit_distance": res["edit_distance"],
+                    "normalized_edit_distance": res["normalized_edit_distance"],
+                    'p_value': res['p_value']
+                }
+
+                sink.write_row(row)
+
+                print('\n','='*80, '\n')
+                for item in res.items():
+                    print(f'{item[0]}:{item[1]}')
+
+            iter_time = time.perf_counter() - iter_start
+            pbar.set_postfix_str(f"iter={iter_time:.3f}s | file={sample['file_name'][0]}")
+            pbar.update(1)
 
     
     #save metrics
-    pd.DataFrame(psnr_all, columns=['PSNR']).to_csv(opts.metrics_dir + '/psnr.csv')
+    # pd.DataFrame(psnr_all, columns=['PSNR']).to_csv(opts.metrics_dir + '/psnr.csv')
 
-    print(f'[INFO] Watermark encoding and decoding done\nMean PSNR {np.mean(psnr_all)}')
+    # print(f'[INFO] Watermark encoding and decoding done\nMean PSNR {np.mean(psnr_all)}')
+    print(f'[INFO] Watermark encoding and decoding done')
 
 
 if __name__ == "__main__":

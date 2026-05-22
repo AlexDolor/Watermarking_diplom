@@ -1,5 +1,10 @@
-def test_iv_vae():
+def download_model_weights():
     from modelscope import snapshot_download
+    # download model weights
+    model_dir = snapshot_download('wpy1999/iv-vae', local_dir='data/models')
+    print(model_dir)
+
+def test_iv_vae():
     import torch
     from data.models.vae3d import IV_VAE
     from decord import VideoReader, cpu
@@ -7,9 +12,7 @@ def test_iv_vae():
     # from torchvision import transforms
     # from torchvision.io import write_video
     import imageio.v2 as imageio
-    # download model weights
-    # model_dir = snapshot_download('wpy1999/iv-vae', local_dir='data\models')
-    # print(model_dir)
+    
 
     def save_video_imageio(video_tchw: torch.Tensor, path: str, fps: int = 24):
         # video_tchw: [T, C, H, W], float in [0,1]
@@ -63,3 +66,4 @@ def test_iv_vae():
 
 
 test_iv_vae()
+# download_model_weights()
