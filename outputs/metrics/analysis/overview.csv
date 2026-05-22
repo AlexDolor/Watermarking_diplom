@@ -1,7 +1,7 @@
 metric,value
 rows_total,1002.0
 videos_unique,201.0
-clean_detection_rate_p05,
-clean_detection_rate_p01,
-attacked_detection_rate_p05,0.8652694610778443
-attacked_detection_rate_p01,0.8483033932135728
+clean_detection_rate_p05,0.9552238805970149
+clean_detection_rate_p01,0.9502487562189055
+attacked_detection_rate_p05,0.8426966292134831
+attacked_detection_rate_p01,0.8227215980024969

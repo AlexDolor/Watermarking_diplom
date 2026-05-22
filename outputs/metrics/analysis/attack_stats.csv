@@ -1,5 +1,4 @@
 attack_name,n,edit_distance_mean,edit_distance_median,normalized_edit_distance_mean,normalized_edit_distance_median,p_value_mean,p_value_median,detection_rate_p05,detection_rate_p01
-watermarking,201,6.940299,0.0,0.042335,0.0,0.029871,0.0,0.955224,0.950249
 resized,201,13.970149,4.0,0.080902,0.01875,0.076448,0.0,0.900498,0.890547
 gauss_noised,200,17.54,4.0,0.0993,0.023303,0.10468,0.0,0.865,0.835
 frame_dropped,200,35.41,29.0,0.194257,0.175737,0.10523,0.0,0.85,0.84

@@ -24,11 +24,14 @@ def analyze_watermark_csv(csv_path: str):
     for c in ["psnr_mean", "ssim_mean", "edit_distance", "normalized_edit_distance", "p_value"]:
         df[c] = pd.to_numeric(df[c], errors="coerce")
 
-    df["is_clean"] = df["attack_name"].eq("watermarked")
+    df["is_clean"] = df["attack_name"].eq("watermarking")
     df["is_attacked"] = ~df["is_clean"]
 
     df["detected_p05"] = df["p_value"] < 0.05
     df["detected_p01"] = df["p_value"] < 0.01
+
+    print(sum(df["detected_p05"]))
+    print(sum(df["detected_p01"]))
 
     out = {}
 
