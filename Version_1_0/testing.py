@@ -516,6 +516,105 @@ def test_loader():
         # print(item.shape)
 
 
+def loader():
+    from dataset import VideoPathDataset
+    from torch.utils.data import DataLoader, RandomSampler
+    from parser import create_parser, print_opts
+    from misc import make_progress_bar
+    from metrics import IncrementalCSVSink, evaluate_frame_pair_metrics, summarize_video_quality_metrics
+    import time
+    from main import encode_frame, decode_frame, load_pretrained_vae
+    import cv2
+
+    parser = create_parser()
+    opts, _ = parser.parse_known_args()
+    print_opts(opts)
+
+    dataset = VideoPathDataset(
+        data_dir=opts.data_dir,
+        split=opts.data_split,
+        # max_videos=opts.max_videos
+        )
+    
+    if opts.max_videos == 0:
+        opts.max_videos = len(dataset)
+    else:   
+        opts.max_videos = min(len(dataset), opts.max_videos)
+
+    generator = torch.Generator()
+    generator.manual_seed(420)
+    sampler = RandomSampler(
+        dataset,
+        replacement=False,
+        num_samples=opts.max_videos,
+        generator=generator,
+    )
+    loader = DataLoader(
+        dataset,
+        batch_size=1,
+        sampler=sampler
+    )
+
+    pbar = make_progress_bar(opts.max_videos, 'videos', 'Encoding/decoding videos')
+    
+    fieldnames = [
+        "video_id",
+        "psnr_mean",
+        "ssim_mean"
+    ]
+    vae = load_pretrained_vae(opts.device)
+
+    def encode_decode_video(input_path, vae, opts):
+        cap = cv2.VideoCapture(input_path)
+        if not cap.isOpened():
+            print(f"[ERROR] Cannot open video: {input_path}")
+            return False
+
+        # width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        # height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        # fps = cap.get(cv2.CAP_PROP_FPS)
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+
+        frame_metrics = []
+        pbar = make_progress_bar(total_frames, 'frames', 'encoding/decoding video')
+
+        while True:
+            iter_start = time.perf_counter()
+
+            ret, frame = cap.read()
+            if not ret:
+                break
+            z = encode_frame(frame, vae, opts.device)
+            encoded_frame = decode_frame(z, vae)
+            frame_metrics.append(evaluate_frame_pair_metrics(frame, encoded_frame))
+            iter_time = time.perf_counter() - iter_start
+            pbar.set_postfix_str(f"iter={iter_time:.3f}s")
+            pbar.update(1)
+
+        cap.release()
+        metrics = summarize_video_quality_metrics(frame_metrics)
+        return metrics
+
+
+    with IncrementalCSVSink(opts.metrics_dir+"/vae_metrics.csv", fieldnames) as sink:
+        for sample in loader:
+            iter_start = time.perf_counter()
+            metrics = encode_decode_video(
+                input_path = sample['video_path'][0],
+                vae=vae, 
+                opts=opts)
+            row = {
+                "video_id": sample['file_name'][0],
+                "psnr_mean": metrics["psnr_mean"],
+                "ssim_mean": metrics["ssim_mean"],
+            }
+
+            sink.write_row(row)
+            iter_time = time.perf_counter() - iter_start
+            pbar.set_postfix_str(f"iter={iter_time:.3f}s | file={sample['file_name'][0]}")
+            pbar.update(1)
+    print(f'[INFO] All {opts.max_videos} Done')
+
 # test_encode()
 # test_cv()
 # test_VideoPath()
@@ -537,4 +636,5 @@ def test_loader():
 # test_attack()
 # test_save_str()
 # test_prc_seq()
-test_loader()
+# test_loader()
+loader()
